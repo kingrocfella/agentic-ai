@@ -14,6 +14,7 @@ services:
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     depends_on:
       - redis
+      - ollama
 
   redis:
     image: redis:7-alpine
@@ -30,6 +31,29 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
+  ollama:
+    image: ollama/ollama
+    container_name: ollama
+    restart: always
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    entrypoint: >
+      sh -c "
+        ollama serve & 
+        sleep 5 && 
+        ollama pull llama3.2:latest && 
+        wait
+      "
+    healthcheck:
+      test:
+        ["CMD-SHELL", "timeout 5 bash -c '</dev/tcp/127.0.0.1/11434' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
 volumes:
   redis_data:
+  ollama_data:
