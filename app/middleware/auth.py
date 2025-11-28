@@ -4,6 +4,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError, jwt
 from passlib.context import CryptContext
+from typing import cast
 
 from app.config import SECRET_KEY, ALGORITHM
 from app.database import redis_client
@@ -45,12 +46,14 @@ def get_current_user(
     if redis_client.get(f"blacklist:{token}"):
         raise credentials_exception
 
+    email: str | None = None
+
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        email = cast(str, payload.get("sub"))
     except JWTError as exc:
         raise credentials_exception from exc
 
-    email: str = payload.get("sub")
     if email:
         return email
     raise credentials_exception

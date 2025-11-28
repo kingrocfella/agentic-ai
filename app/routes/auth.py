@@ -1,12 +1,13 @@
 import json
 from datetime import timedelta
+from typing import cast
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials
 
 from app.config import ACCESS_TOKEN_EXPIRE_MINUTES
 from app.database import redis_client
-from app.schemas import UserRegister, UserLogin, Token
+from app.schemas import UserRegister, UserLogin, UserResponse, LoginResponse, Token
 from app.middleware import (
     hash_password,
     verify_password,
@@ -18,8 +19,10 @@ from app.middleware import (
 router = APIRouter()
 
 
-@router.post("/register", status_code=status.HTTP_201_CREATED)
-async def register(user: UserRegister):
+@router.post(
+    "/register", status_code=status.HTTP_201_CREATED, response_model=UserResponse
+)
+def register(user: UserRegister) -> UserResponse:
     """Register a new user"""
     if redis_client.get(f"user:{user.email}"):
         raise HTTPException(
@@ -30,11 +33,11 @@ async def register(user: UserRegister):
     user_data = {"email": user.email, "password": hash_password(user.password)}
     redis_client.set(f"user:{user.email}", json.dumps(user_data))
 
-    return {"message": "User registered successfully"}
+    return UserResponse(message="User registered successfully")
 
 
-@router.post("/login", response_model=Token)
-async def login(user: UserLogin):
+@router.post("/login", response_model=LoginResponse)
+def login(user: UserLogin) -> LoginResponse:
     """Login a user"""
     user_data = redis_client.get(f"user:{user.email}")
     if not user_data:
@@ -42,7 +45,7 @@ async def login(user: UserLogin):
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password"
         )
 
-    user_dict = json.loads(user_data)
+    user_dict = json.loads(cast(str, user_data))
 
     # Verify password
     if not verify_password(user.password, user_dict["password"]):
@@ -56,18 +59,21 @@ async def login(user: UserLogin):
         expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES),
     )
 
-    return {"access_token": access_token, "token_type": "bearer"}
+    return LoginResponse(
+        message="User logged in successfully",
+        data=Token(access_token=access_token, token_type="bearer"),
+    )
 
 
-@router.post("/logout")
-async def logout(
+@router.post("/logout", response_model=UserResponse)
+def logout(
     credentials: HTTPAuthorizationCredentials = Depends(security),
     _: str = Depends(get_current_user),
-):
+) -> UserResponse:
     """Logout a user"""
     token = credentials.credentials
 
     # Blacklist the token until it expires
     redis_client.setex(f"blacklist:{token}", ACCESS_TOKEN_EXPIRE_MINUTES * 60, "1")
 
-    return {"message": "Successfully logged out"}
+    return UserResponse(message="Successfully logged out")
