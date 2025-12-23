@@ -5,6 +5,7 @@ from app.middleware.auth import (
     create_access_token,
     get_current_user,
 )
+from app.middleware.logging_middleware import LoggingMiddleware
 
 __all__ = [
     "security",
@@ -12,5 +13,5 @@ __all__ = [
     "verify_password",
     "create_access_token",
     "get_current_user",
+    "LoggingMiddleware",
 ]
-

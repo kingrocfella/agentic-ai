@@ -6,7 +6,14 @@ from app.config import WEATHER_API_KEY, WEATHER_API_BASE_URL
 
 @tool
 def get_current_weather_by_city(city: str) -> str:
-    """Use this tool to get the weather by city"""
+    """Get current weather information for a specific city.
+    
+    Args:
+        city: The name of the city to get weather for (e.g., "London", "New York")
+    
+    Returns:
+        Current weather information including temperature, conditions, humidity, and wind.
+    """
     if not WEATHER_API_KEY:
         return "Error: Weather API key not configured"
 
