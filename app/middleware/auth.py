@@ -8,6 +8,7 @@ from typing import cast
 
 from app.config import SECRET_KEY, ALGORITHM
 from app.database import redis_client
+from app.utils.logger import logger
 
 security = HTTPBearer()
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -15,12 +16,17 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 def hash_password(password: str) -> str:
     """Hash a password"""
+    logger.debug("Hashing password")
     return pwd_context.hash(password)
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify a password"""
-    return pwd_context.verify(plain_password, hashed_password)
+    logger.debug("Verifying password")
+    result = pwd_context.verify(plain_password, hashed_password)
+    if not result:
+        logger.debug("Password verification failed")
+    return result
 
 
 def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
@@ -28,6 +34,12 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None) -> s
     to_encode = data.copy()
     expire = datetime.now(timezone.utc) + (expires_delta or timedelta(minutes=15))
     to_encode.update({"exp": expire})
+
+    logger.debug(
+        "Creating access token for sub: %s, expires: %s",
+        data.get("sub"),
+        expire.isoformat(),
+    )
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 
@@ -44,6 +56,7 @@ def get_current_user(
 
     # Check if token is blacklisted
     if redis_client.get(f"blacklist:{token}"):
+        logger.warning("Attempted use of blacklisted token")
         raise credentials_exception
 
     email: str | None = None
@@ -51,9 +64,13 @@ def get_current_user(
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         email = cast(str, payload.get("sub"))
+        logger.debug("Token decoded successfully for user: %s", email)
     except JWTError as exc:
+        logger.warning("JWT decode error: %s", str(exc))
         raise credentials_exception from exc
 
     if email:
         return email
+
+    logger.warning("Token missing 'sub' claim")
     raise credentials_exception
