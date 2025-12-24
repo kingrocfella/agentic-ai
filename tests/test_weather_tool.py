@@ -3,8 +3,6 @@
 from datetime import datetime, timedelta
 from unittest.mock import patch, MagicMock
 
-import pytest
-
 from app.tools.ollama_tools import (
     get_weather_by_city,
     _format_current_weather,
@@ -168,7 +166,7 @@ def test_get_historical_weather_success() -> None:
             result = get_weather_by_city.invoke({"city": "London", "date": past_date})
 
     assert "Historical Weather in London" in result
-    assert past_date in result
+    assert "June 15, 2024" in result
     assert "Max Temperature" in result
 
 
@@ -349,7 +347,7 @@ def test_format_historical_weather() -> None:
     result = _format_historical_weather(location, day_data, "2024-06-15")
 
     assert "Historical Weather in Berlin" in result
-    assert "2024-06-15" in result
+    assert "June 15, 2024" in result
     assert "Max Temperature: 25.0°C" in result
     assert "Min Temperature: 18.0°C" in result
 
@@ -376,7 +374,7 @@ def test_format_forecast_weather() -> None:
     result = _format_forecast_weather(location, day_data, "2024-12-30")
 
     assert "Weather Forecast for Tokyo" in result
-    assert "2024-12-30" in result
+    assert "December 30, 2024" in result  # Human-readable date format
     assert "Chance of Rain: 20%" in result
     assert "Chance of Snow: 0%" in result
 
