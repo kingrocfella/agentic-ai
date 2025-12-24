@@ -74,14 +74,14 @@ docker-compose up --build
 
 This starts:
 
-- **API** on `http://localhost:8000`
+- **API** on `http://localhost:9000`
 - **Redis** on `localhost:6379`
 - **Ollama** on `localhost:11434` (auto-pulls llama3.2)
 
 ### 3. Verify
 
 ```bash
-curl http://localhost:8000/health
+curl http://localhost:9000/health
 ```
 
 ## Weather Tool
@@ -120,5 +120,5 @@ pytest tests/ -v --cov=app
 
 Once running, access:
 
-- Swagger UI: `http://localhost:8000/docs`
-- ReDoc: `http://localhost:8000/redoc`
+- Swagger UI: `http://localhost:9000/docs`
+- ReDoc: `http://localhost:9000/redoc`
