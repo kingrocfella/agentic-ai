@@ -3,7 +3,7 @@ from fastapi.responses import StreamingResponse
 
 from app.config import SUPPORTED_AGENTS
 from app.middleware import get_current_user
-from app.utils import generate_sse_events
+from app.utils.sse import generate_sse_events
 from app.utils.logger import logger
 
 

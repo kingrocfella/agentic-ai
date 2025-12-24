@@ -138,13 +138,20 @@ def _format_current_weather(location: dict, current: dict) -> str:
         f"Condition: {current['condition']['text']}\n"
         f"Humidity: {current['humidity']}%\n"
         f"Wind: {current['wind_kph']} km/h {current['wind_dir']}\n"
-        f"Feels like: {current['feelslike_c']}°C\n"
+        f"Feels like: {current['feelslike_c']}°C\n\n"
     )
+
+
+def _format_date_readable(date: str) -> str:
+    """Convert YYYY-MM-DD to human readable format (e.g., 'Monday, December 23, 2024')."""
+    date_obj = datetime.strptime(date, "%Y-%m-%d")
+    return date_obj.strftime("%A, %B %d, %Y")
 
 
 def _format_historical_weather(location: dict, day_data: dict, date: str) -> str:
     """Format historical weather data."""
     day = day_data["day"]
+    readable_date = _format_date_readable(date)
 
     logger.info(
         "Successfully fetched historical weather for %s, %s on %s",
@@ -154,20 +161,21 @@ def _format_historical_weather(location: dict, day_data: dict, date: str) -> str
     )
 
     return (
-        f"Historical Weather in {location['name']}, {location['country']} on {date}:\n\n"
+        f"Historical Weather in {location['name']}, {location['country']} on {readable_date}:\n\n"
         f"Max Temperature: {day['maxtemp_c']}°C ({day['maxtemp_f']}°F)\n"
         f"Min Temperature: {day['mintemp_c']}°C ({day['mintemp_f']}°F)\n"
         f"Average Temperature: {day['avgtemp_c']}°C ({day['avgtemp_f']}°F)\n"
         f"Condition: {day['condition']['text']}\n"
         f"Max Wind: {day['maxwind_kph']} km/h\n"
         f"Total Precipitation: {day['totalprecip_mm']} mm\n"
-        f"Average Humidity: {day['avghumidity']}%\n"
+        f"Average Humidity: {day['avghumidity']}%\n\n"
     )
 
 
 def _format_forecast_weather(location: dict, day_data: dict, date: str) -> str:
     """Format forecast weather data."""
     day = day_data["day"]
+    readable_date = _format_date_readable(date)
 
     logger.info(
         "Successfully fetched forecast for %s, %s on %s",
@@ -177,7 +185,7 @@ def _format_forecast_weather(location: dict, day_data: dict, date: str) -> str:
     )
 
     return (
-        f"Weather Forecast for {location['name']}, {location['country']} on {date}:\n\n"
+        f"Weather Forecast for {location['name']}, {location['country']} on {readable_date}:\n\n"
         f"Max Temperature: {day['maxtemp_c']}°C ({day['maxtemp_f']}°F)\n"
         f"Min Temperature: {day['mintemp_c']}°C ({day['mintemp_f']}°F)\n"
         f"Average Temperature: {day['avgtemp_c']}°C ({day['avgtemp_f']}°F)\n"
@@ -185,5 +193,5 @@ def _format_forecast_weather(location: dict, day_data: dict, date: str) -> str:
         f"Chance of Rain: {day.get('daily_chance_of_rain', 'N/A')}%\n"
         f"Chance of Snow: {day.get('daily_chance_of_snow', 'N/A')}%\n"
         f"Max Wind: {day['maxwind_kph']} km/h\n"
-        f"Average Humidity: {day['avghumidity']}%\n"
+        f"Average Humidity: {day['avghumidity']}%\n\n"
     )

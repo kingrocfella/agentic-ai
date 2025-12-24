@@ -223,20 +223,68 @@ def test_sse_done_event_at_end(
 # =============================================================================
 
 
-def test_weather_query_response(
+def test_current_weather_query_response(
     client: TestClient,
     auth_headers: dict[str, str],
 ) -> None:
-    """Test weather query returns weather data."""
+    """Test current weather query returns weather data."""
 
     def generator(_q: str, _a: str) -> Generator[str, None, None]:
-        yield 'data: {"event": "message", "data": "Weather in London: 15°C"}\n\n'
+        yield 'data: {"event": "message", "data": "Current Weather in London: 15°C"}\n\n'
         yield 'data: {"event": "done", "data": ""}\n\n'
 
     with patch("app.routes.agents.generate_sse_events", side_effect=generator):
         response = client.get(
             "/agents/chat",
             params={"agent_type": "ollama", "query": "What's the weather in London?"},
+            headers=auth_headers,
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert "Weather" in response.content.decode()
+
+
+def test_historical_weather_query_response(
+    client: TestClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """Test historical weather query returns past weather data."""
+
+    def generator(_q: str, _a: str) -> Generator[str, None, None]:
+        yield 'data: {"event": "message", "data": "Historical Weather in Paris on 2024-06-15"}\n\n'
+        yield 'data: {"event": "done", "data": ""}\n\n'
+
+    with patch("app.routes.agents.generate_sse_events", side_effect=generator):
+        response = client.get(
+            "/agents/chat",
+            params={
+                "agent_type": "ollama",
+                "query": "What was the weather in Paris on June 15, 2024?",
+            },
+            headers=auth_headers,
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert "Weather" in response.content.decode()
+
+
+def test_forecast_weather_query_response(
+    client: TestClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """Test forecast weather query returns future weather data."""
+
+    def generator(_q: str, _a: str) -> Generator[str, None, None]:
+        yield 'data: {"event": "message", "data": "Weather Forecast for Tokyo"}\n\n'
+        yield 'data: {"event": "done", "data": ""}\n\n'
+
+    with patch("app.routes.agents.generate_sse_events", side_effect=generator):
+        response = client.get(
+            "/agents/chat",
+            params={
+                "agent_type": "ollama",
+                "query": "What will the weather be in Tokyo next week?",
+            },
             headers=auth_headers,
         )
 

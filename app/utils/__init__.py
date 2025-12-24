@@ -1,5 +1,2 @@
-from app.utils.sse import generate_sse_events
-
-__all__ = [
-    "generate_sse_events",
-]
+# Utils package
+# Import directly from submodules to avoid circular imports

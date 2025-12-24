@@ -1,4 +1,5 @@
 from collections.abc import Generator
+from datetime import datetime, timedelta
 from typing import Any
 
 from langchain_core.messages import HumanMessage
@@ -43,20 +44,38 @@ User question: {query}
 
 Your answer:"""
 
-# System prompt for the ReAct agent (with tools)
-AGENT_SYSTEM_PROMPT = """You are a helpful AI assistant with access to the get_weather_by_city tool.
+
+def _get_agent_system_prompt() -> str:
+    """Generate the agent system prompt with the current date."""
+    today = datetime.now().strftime("%Y-%m-%d")
+    yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+    tomorrow = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+
+    return f"""You are a helpful AI assistant with access to the get_weather_by_city tool.
+
+TODAY'S DATE: {today}
+
+When the user mentions relative dates, convert them to YYYY-MM-DD format:
+- "today" = {today}
+- "yesterday" = {yesterday}
+- "tomorrow" = {tomorrow}
+- For other relative dates (e.g., "last week", "3 days ago"), calculate the correct date.
 
 The tool supports:
-- Current weather: get_weather_by_city(city="London")
-- Historical weather: get_weather_by_city(city="London", date="2024-01-15")
-- Forecast weather: get_weather_by_city(city="London", date="2024-12-28")
+- Current weather: get_weather_by_city(city="London") - no date needed
+- Historical weather: get_weather_by_city(city="London", date="{yesterday}") - for past dates
+- Forecast weather: get_weather_by_city(city="London", date="{tomorrow}") - for future dates (up to 14 days)
 
 Date format must be YYYY-MM-DD. Historical data available from 2010-01-01. Forecast up to 14 days ahead.
 
-Always extract the city name and date (if mentioned) from the user's query and use the tool appropriately."""
+Always extract the city name and calculate the correct date from the user's query before calling the tool."""
 
 
-agent = create_react_agent(agent_model, tools, state_modifier=AGENT_SYSTEM_PROMPT)
+def _create_agent():
+    """Create a new agent with the current date in the system prompt."""
+    return create_react_agent(
+        agent_model, tools, state_modifier=_get_agent_system_prompt()
+    )
 
 
 def needs_weather_tool(query: str) -> bool:
@@ -79,6 +98,10 @@ def stream_ollama_agent_response(query: str) -> Generator[dict[str, Any], None, 
     # First, determine if we need tools
     if needs_weather_tool(query):
         logger.info("Using ReAct agent with weather tools")
+
+        # Create agent with current date context
+        agent = _create_agent()
+
         # Use agent with tools
         chunk_count = 0
         for chunk in agent.stream(
