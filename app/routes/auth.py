@@ -75,7 +75,7 @@ def login(user: UserLogin) -> LoginResponse:
     )
 
 
-@router.post("/logout", response_model=UserResponse)
+@router.get("/logout", response_model=UserResponse)
 def logout(
     credentials: HTTPAuthorizationCredentials = Depends(security),
     current_user: str = Depends(get_current_user),

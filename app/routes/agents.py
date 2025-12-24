@@ -14,15 +14,15 @@ router = APIRouter()
 def get_agent_response(
     agent_type: str,
     query: str,
-    # current_user: str = Depends(get_current_user),
+    current_user: str = Depends(get_current_user),
 ) -> StreamingResponse:
     """Stream responses from an agent via Server-Sent Events"""
-    # logger.info(
-    #     "Agent chat request - user: %s, agent: %s, query: %s",
-    #     current_user,
-    #     agent_type,
-    #     query
-    # )
+    logger.info(
+        "Agent chat request - user: %s, agent: %s, query: %s",
+        current_user,
+        agent_type,
+        query
+    )
 
     if agent_type not in SUPPORTED_AGENTS:
         logger.warning("Invalid agent type requested: %s", agent_type)

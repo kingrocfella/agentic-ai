@@ -6,7 +6,7 @@ from langchain_ollama import ChatOllama
 from langgraph.prebuilt import create_react_agent
 
 from app.config import OLLAMA_HOST
-from app.tools import get_current_weather_by_city
+from app.tools import get_weather_by_city
 from app.utils.logger import logger
 
 # Base model for direct responses
@@ -15,15 +15,17 @@ base_model = ChatOllama(model="llama3.2:latest", temperature=0, base_url=OLLAMA_
 # Model for the ReAct agent
 agent_model = ChatOllama(model="llama3.2:latest", temperature=0, base_url=OLLAMA_HOST)
 
-tools = [get_current_weather_by_city]
+tools = [get_weather_by_city]
 
 # Classifier prompt to determine if we need tools
 CLASSIFIER_PROMPT = """Analyze the following user query and determine if it requires the weather tool.
 
 Respond with ONLY "YES" if the query is asking about:
-- Weather conditions in a specific location
+- Current weather conditions in a specific location
+- Historical/past weather for a location on a specific date
+- Weather forecast for a location on a future date
 - Temperature, humidity, wind, or climate in a city
-- Current or forecast weather for a location
+- Weather comparison between dates
 
 Respond with ONLY "NO" if the query is:
 - A math question
@@ -42,11 +44,16 @@ User question: {query}
 Your answer:"""
 
 # System prompt for the ReAct agent (with tools)
-AGENT_SYSTEM_PROMPT = """You are a helpful AI assistant with access to weather tools.
+AGENT_SYSTEM_PROMPT = """You are a helpful AI assistant with access to the get_weather_by_city tool.
 
-Use the get_current_weather_by_city tool to answer the user's weather-related question.
+The tool supports:
+- Current weather: get_weather_by_city(city="London")
+- Historical weather: get_weather_by_city(city="London", date="2024-01-15")
+- Forecast weather: get_weather_by_city(city="London", date="2024-12-28")
 
-Remember to provide accurate, helpful information."""
+Date format must be YYYY-MM-DD. Historical data available from 2010-01-01. Forecast up to 14 days ahead.
+
+Always extract the city name and date (if mentioned) from the user's query and use the tool appropriately."""
 
 
 agent = create_react_agent(agent_model, tools, state_modifier=AGENT_SYSTEM_PROMPT)
