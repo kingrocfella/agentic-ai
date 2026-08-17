@@ -6,15 +6,30 @@ from langchain_core.messages import HumanMessage
 from langchain_ollama import ChatOllama
 from langgraph.prebuilt import create_react_agent
 
-from app.config import OLLAMA_HOST
+from app.config import OLLAMA_HOST, OLLAMA_MODEL, OLLAMA_TIMEOUT_SECONDS
 from app.tools import get_weather_by_city
 from app.utils.logger import logger
 
+# Bound every outbound call to the model host at the client level. The request
+# deadline middleware cannot preempt a blocking read inside the streaming
+# threadpool, so a stalled Ollama backend must be timed out here instead.
+_OLLAMA_CLIENT_KWARGS = {"timeout": OLLAMA_TIMEOUT_SECONDS}
+
 # Base model for direct responses
-base_model = ChatOllama(model="llama3.2:latest", temperature=0, base_url=OLLAMA_HOST)
+base_model = ChatOllama(
+    model=OLLAMA_MODEL,
+    temperature=0,
+    base_url=OLLAMA_HOST,
+    client_kwargs=_OLLAMA_CLIENT_KWARGS,
+)
 
 # Model for the ReAct agent
-agent_model = ChatOllama(model="llama3.2:latest", temperature=0, base_url=OLLAMA_HOST)
+agent_model = ChatOllama(
+    model=OLLAMA_MODEL,
+    temperature=0,
+    base_url=OLLAMA_HOST,
+    client_kwargs=_OLLAMA_CLIENT_KWARGS,
+)
 
 tools = [get_weather_by_city]
 
@@ -80,7 +95,7 @@ def _create_agent():
 
 def needs_weather_tool(query: str) -> bool:
     """Determine if the query needs the weather tool"""
-    logger.debug("Classifying query for tool requirement: %s", query[:50])
+    logger.debug("Classifying query for tool requirement")
 
     classifier_prompt = CLASSIFIER_PROMPT.format(query=query)
     response = base_model.invoke([HumanMessage(content=classifier_prompt)])
@@ -93,7 +108,7 @@ def needs_weather_tool(query: str) -> bool:
 
 def stream_ollama_agent_response(query: str) -> Generator[dict[str, Any], None, None]:
     """Stream responses from an ollama agent using LangGraph"""
-    logger.info("Starting agent response stream for query: %s", query[:50])
+    logger.info("Starting agent response stream")
 
     # First, determine if we need tools
     if needs_weather_tool(query):

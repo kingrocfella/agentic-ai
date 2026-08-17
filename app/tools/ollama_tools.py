@@ -3,7 +3,7 @@ from datetime import datetime
 import httpx
 from langchain.tools import tool
 
-from app.config import WEATHER_API_KEY, WEATHER_API_BASE_URL
+from app.config import WEATHER_API_KEY, WEATHER_API_BASE_URL, WEATHER_TIMEOUT_SECONDS
 from app.utils.logger import logger
 
 
@@ -20,7 +20,7 @@ def get_weather_by_city(city: str, date: str | None = None) -> str:
     Returns:
         Weather information including temperature, conditions, humidity, and wind.
     """
-    logger.info("Fetching weather data for city: %s, date: %s", city, date or "current")
+    logger.info("Fetching weather data")
 
     if not WEATHER_API_KEY:
         logger.error("Weather API key not configured")
@@ -86,7 +86,7 @@ def get_weather_by_city(city: str, date: str | None = None) -> str:
     )
 
     try:
-        response = httpx.get(url, params=params)
+        response = httpx.get(url, params=params, timeout=WEATHER_TIMEOUT_SECONDS)
 
         if response.status_code != 200:
             logger.warning(

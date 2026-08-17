@@ -41,8 +41,8 @@ def test_register_duplicate_email(
         json={"email": registered_user["email"], "password": "AnotherPass123!"},
     )
 
-    assert response.status_code == status.HTTP_400_BAD_REQUEST
-    assert response.json()["detail"] == "Email already registered"
+    assert response.status_code == status.HTTP_201_CREATED
+    assert response.json()["message"] == "User registered successfully"
 
 
 def test_register_invalid_email(client: TestClient) -> None:
@@ -146,13 +146,19 @@ def test_login_token_is_valid_jwt(
     """Test that the returned token is a valid JWT."""
     from jose import jwt
 
-    from app.config import ALGORITHM, SECRET_KEY
+    from app.config import ALGORITHM, JWT_AUDIENCE, JWT_ISSUER, SECRET_KEY
 
     response = client.post("/login", json=registered_user)
     token = response.json()["data"]["access_token"]
 
     # Decode and verify the token
-    payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+    payload = jwt.decode(
+        token,
+        SECRET_KEY,
+        algorithms=[ALGORITHM],
+        audience=JWT_AUDIENCE,
+        issuer=JWT_ISSUER,
+    )
     assert payload["sub"] == registered_user["email"]
     assert "exp" in payload
 
@@ -169,25 +175,27 @@ def test_logout_success(
     mock_redis: Any,
 ) -> None:
     """Test successful logout."""
-    response = client.get("/logout", headers=auth_headers)
+    response = client.post("/logout", headers=auth_headers)
 
     assert response.status_code == status.HTTP_200_OK
     assert response.json()["message"] == "Successfully logged out"
 
     # Verify token is blacklisted
-    assert mock_redis.get(f"blacklist:{auth_token}") == "1"
+    from app.middleware import token_fingerprint
+
+    assert mock_redis.get(f"blacklist:{token_fingerprint(auth_token)}") == "1"
 
 
 def test_logout_without_token(client: TestClient) -> None:
     """Test logout without authentication token."""
-    response = client.get("/logout")
+    response = client.post("/logout")
 
     assert response.status_code == status.HTTP_403_FORBIDDEN
 
 
 def test_logout_with_invalid_token(client: TestClient) -> None:
     """Test logout with an invalid token."""
-    response = client.get(
+    response = client.post(
         "/logout",
         headers={"Authorization": "Bearer invalid-token"},
     )
@@ -202,10 +210,10 @@ def test_logout_with_blacklisted_token(
 ) -> None:
     """Test logout with an already blacklisted token."""
     # First logout
-    client.get("/logout", headers=auth_headers)
+    client.post("/logout", headers=auth_headers)
 
     # Second logout with same token should fail
-    response = client.get("/logout", headers=auth_headers)
+    response = client.post("/logout", headers=auth_headers)
 
     assert response.status_code == status.HTTP_401_UNAUTHORIZED
     assert response.json()["detail"] == "Invalid or expired token"
@@ -213,7 +221,7 @@ def test_logout_with_blacklisted_token(
 
 def test_logout_with_malformed_auth_header(client: TestClient) -> None:
     """Test logout with malformed authorization header."""
-    response = client.get(
+    response = client.post(
         "/logout",
         headers={"Authorization": "NotBearer token"},
     )
@@ -240,14 +248,14 @@ def test_register_login_logout_flow(client: TestClient) -> None:
     token = login_response.json()["data"]["access_token"]
 
     # Logout
-    logout_response = client.get(
+    logout_response = client.post(
         "/logout",
         headers={"Authorization": f"Bearer {token}"},
     )
     assert logout_response.status_code == status.HTTP_200_OK
 
     # Try to use the same token after logout (should fail)
-    second_logout = client.get(
+    second_logout = client.post(
         "/logout",
         headers={"Authorization": f"Bearer {token}"},
     )
@@ -282,12 +290,49 @@ def test_logout_blacklists_token_in_redis(
 ) -> None:
     """Test that logout properly blacklists the token in Redis."""
     # Logout
-    response = client.get("/logout", headers=auth_headers)
+    response = client.post("/logout", headers=auth_headers)
     assert response.status_code == status.HTTP_200_OK
 
     # Token should be blacklisted in Redis
-    assert mock_redis.get(f"blacklist:{auth_token}") == "1"
+    from app.middleware import token_fingerprint
+
+    assert mock_redis.get(f"blacklist:{token_fingerprint(auth_token)}") == "1"
 
     # Subsequent request with same token should fail
-    response = client.get("/logout", headers=auth_headers)
+    response = client.post("/logout", headers=auth_headers)
     assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+def test_delete_account_removes_identity_and_invalidates_all_sessions(
+    client: TestClient,
+    registered_user: dict[str, str],
+    auth_headers: dict[str, str],
+    mock_redis: Any,
+) -> None:
+    response = client.request(
+        "DELETE",
+        "/account",
+        json={"password": registered_user["password"]},
+        headers=auth_headers,
+    )
+    assert response.status_code == status.HTTP_200_OK
+    assert mock_redis.get(f"user:{registered_user['email']}") is None
+
+    retry = client.post("/logout", headers=auth_headers)
+    assert retry.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+def test_delete_account_requires_current_password(
+    client: TestClient,
+    registered_user: dict[str, str],
+    auth_headers: dict[str, str],
+    mock_redis: Any,
+) -> None:
+    response = client.request(
+        "DELETE",
+        "/account",
+        json={"password": "WrongPassword123!"},
+        headers=auth_headers,
+    )
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+    assert mock_redis.get(f"user:{registered_user['email']}") is not None

@@ -28,14 +28,28 @@ def test_chat_success_with_ollama(
     with patch(
         "app.routes.agents.generate_sse_events", side_effect=_mock_sse_generator
     ):
-        response = client.get(
+        response = client.post(
             "/agents/chat",
-            params={"agent_type": "ollama", "query": "What is 2+2?"},
+            json={"agent_type": "ollama", "query": "What is 2+2?"},
             headers=auth_headers,
         )
 
         assert response.status_code == status.HTTP_200_OK
         assert response.headers["content-type"] == "text/event-stream; charset=utf-8"
+
+
+def test_chat_prompt_is_not_accepted_in_the_url(
+    client: TestClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """GET query strings can leak prompts through history and proxy logs."""
+    response = client.get(
+        "/agents/chat",
+        params={"agent_type": "ollama", "query": "private prompt"},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == status.HTTP_405_METHOD_NOT_ALLOWED
 
 
 def test_chat_returns_streaming_headers(
@@ -46,9 +60,9 @@ def test_chat_returns_streaming_headers(
     with patch(
         "app.routes.agents.generate_sse_events", side_effect=_mock_sse_generator
     ):
-        response = client.get(
+        response = client.post(
             "/agents/chat",
-            params={"agent_type": "ollama", "query": "Hello"},
+            json={"agent_type": "ollama", "query": "Hello"},
             headers=auth_headers,
         )
 
@@ -61,9 +75,9 @@ def test_chat_invalid_agent_type(
     auth_headers: dict[str, str],
 ) -> None:
     """Test chat with an invalid agent type."""
-    response = client.get(
+    response = client.post(
         "/agents/chat",
-        params={"agent_type": "invalid_agent", "query": "Hello"},
+        json={"agent_type": "invalid_agent", "query": "Hello"},
         headers=auth_headers,
     )
 
@@ -78,9 +92,9 @@ def test_chat_invalid_agent_type(
 
 def test_chat_without_authentication(client: TestClient) -> None:
     """Test chat without authentication token."""
-    response = client.get(
+    response = client.post(
         "/agents/chat",
-        params={"agent_type": "ollama", "query": "Hello"},
+        json={"agent_type": "ollama", "query": "Hello"},
     )
 
     assert response.status_code == status.HTTP_403_FORBIDDEN
@@ -88,9 +102,9 @@ def test_chat_without_authentication(client: TestClient) -> None:
 
 def test_chat_with_invalid_token(client: TestClient) -> None:
     """Test chat with an invalid authentication token."""
-    response = client.get(
+    response = client.post(
         "/agents/chat",
-        params={"agent_type": "ollama", "query": "Hello"},
+        json={"agent_type": "ollama", "query": "Hello"},
         headers={"Authorization": "Bearer invalid-token"},
     )
 
@@ -104,11 +118,13 @@ def test_chat_with_blacklisted_token(
     mock_redis: Any,
 ) -> None:
     """Test chat with a blacklisted token."""
-    mock_redis.set(f"blacklist:{auth_token}", "1")
+    from app.middleware import token_fingerprint
 
-    response = client.get(
+    mock_redis.set(f"blacklist:{token_fingerprint(auth_token)}", "1")
+
+    response = client.post(
         "/agents/chat",
-        params={"agent_type": "ollama", "query": "Hello"},
+        json={"agent_type": "ollama", "query": "Hello"},
         headers=auth_headers,
     )
 
@@ -125,9 +141,9 @@ def test_chat_missing_query_parameter(
     auth_headers: dict[str, str],
 ) -> None:
     """Test chat with missing query parameter."""
-    response = client.get(
+    response = client.post(
         "/agents/chat",
-        params={"agent_type": "ollama"},
+        json={"agent_type": "ollama"},
         headers=auth_headers,
     )
 
@@ -139,9 +155,9 @@ def test_chat_missing_agent_type_parameter(
     auth_headers: dict[str, str],
 ) -> None:
     """Test chat with missing agent_type parameter."""
-    response = client.get(
+    response = client.post(
         "/agents/chat",
-        params={"query": "Hello"},
+        json={"query": "Hello"},
         headers=auth_headers,
     )
 
@@ -156,13 +172,13 @@ def test_chat_empty_query(
     with patch(
         "app.routes.agents.generate_sse_events", side_effect=_mock_sse_generator
     ):
-        response = client.get(
+        response = client.post(
             "/agents/chat",
-            params={"agent_type": "ollama", "query": ""},
+            json={"agent_type": "ollama", "query": ""},
             headers=auth_headers,
         )
 
-        assert response.status_code == status.HTTP_200_OK
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
 
 
 # =============================================================================
@@ -178,9 +194,9 @@ def test_sse_message_format(
     with patch(
         "app.routes.agents.generate_sse_events", side_effect=_mock_sse_generator
     ):
-        response = client.get(
+        response = client.post(
             "/agents/chat",
-            params={"agent_type": "ollama", "query": "Hi"},
+            json={"agent_type": "ollama", "query": "Hi"},
             headers=auth_headers,
         )
 
@@ -205,9 +221,9 @@ def test_sse_done_event_at_end(
         yield 'data: {"event": "done", "data": ""}\n\n'
 
     with patch("app.routes.agents.generate_sse_events", side_effect=generator):
-        response = client.get(
+        response = client.post(
             "/agents/chat",
-            params={"agent_type": "ollama", "query": "Process"},
+            json={"agent_type": "ollama", "query": "Process"},
             headers=auth_headers,
         )
 
@@ -234,9 +250,9 @@ def test_current_weather_query_response(
         yield 'data: {"event": "done", "data": ""}\n\n'
 
     with patch("app.routes.agents.generate_sse_events", side_effect=generator):
-        response = client.get(
+        response = client.post(
             "/agents/chat",
-            params={"agent_type": "ollama", "query": "What's the weather in London?"},
+            json={"agent_type": "ollama", "query": "What's the weather in London?"},
             headers=auth_headers,
         )
 
@@ -255,9 +271,9 @@ def test_historical_weather_query_response(
         yield 'data: {"event": "done", "data": ""}\n\n'
 
     with patch("app.routes.agents.generate_sse_events", side_effect=generator):
-        response = client.get(
+        response = client.post(
             "/agents/chat",
-            params={
+            json={
                 "agent_type": "ollama",
                 "query": "What was the weather in Paris on June 15, 2024?",
             },
@@ -279,9 +295,9 @@ def test_forecast_weather_query_response(
         yield 'data: {"event": "done", "data": ""}\n\n'
 
     with patch("app.routes.agents.generate_sse_events", side_effect=generator):
-        response = client.get(
+        response = client.post(
             "/agents/chat",
-            params={
+            json={
                 "agent_type": "ollama",
                 "query": "What will the weather be in Tokyo next week?",
             },
@@ -303,9 +319,9 @@ def test_math_query_response(
         yield 'data: {"event": "done", "data": ""}\n\n'
 
     with patch("app.routes.agents.generate_sse_events", side_effect=generator):
-        response = client.get(
+        response = client.post(
             "/agents/chat",
-            params={"agent_type": "ollama", "query": "What is 2 + 2?"},
+            json={"agent_type": "ollama", "query": "What is 2 + 2?"},
             headers=auth_headers,
         )
 
@@ -326,9 +342,9 @@ def test_chat_with_special_characters(
     with patch(
         "app.routes.agents.generate_sse_events", side_effect=_mock_sse_generator
     ):
-        response = client.get(
+        response = client.post(
             "/agents/chat",
-            params={
+            json={
                 "agent_type": "ollama",
                 "query": "What about @#$%^&*()? And émojis 🎉?",
             },
@@ -348,13 +364,13 @@ def test_chat_with_long_query(
     with patch(
         "app.routes.agents.generate_sse_events", side_effect=_mock_sse_generator
     ):
-        response = client.get(
+        response = client.post(
             "/agents/chat",
-            params={"agent_type": "ollama", "query": long_query},
+            json={"agent_type": "ollama", "query": long_query},
             headers=auth_headers,
         )
 
-        assert response.status_code == status.HTTP_200_OK
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
 
 
 def test_generator_called_with_correct_params(
@@ -365,9 +381,9 @@ def test_generator_called_with_correct_params(
     with patch("app.routes.agents.generate_sse_events") as mock_sse:
         mock_sse.side_effect = _mock_sse_generator
 
-        client.get(
+        client.post(
             "/agents/chat",
-            params={"agent_type": "ollama", "query": "Test query"},
+            json={"agent_type": "ollama", "query": "Test query"},
             headers=auth_headers,
         )
 

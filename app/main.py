@@ -1,17 +1,21 @@
 from fastapi import FastAPI, HTTPException, Request
-from dotenv import load_dotenv
-from starlette.responses import RedirectResponse
+from starlette.responses import JSONResponse
 
-from app.middleware import LoggingMiddleware
-from app.routes import auth_router, health_router, agents_router
+from app.config import IS_PRODUCTION, MAX_REQUEST_BODY_BYTES, REQUEST_TIMEOUT_SECONDS
+from app.middleware import LoggingMiddleware, RequestProtectionMiddleware
+from app.routes import agents_router, auth_router, health_router
 from app.utils.logger import logger
-
-load_dotenv()
 
 app = FastAPI(title="AI Agent API")
 
 # Add logging middleware
 app.add_middleware(LoggingMiddleware)
+app.add_middleware(
+    RequestProtectionMiddleware,
+    max_body_bytes=MAX_REQUEST_BODY_BYTES,
+    timeout_seconds=REQUEST_TIMEOUT_SECONDS,
+    enable_hsts=IS_PRODUCTION,
+)
 
 app.include_router(health_router)
 app.include_router(auth_router)
@@ -20,9 +24,9 @@ app.include_router(agents_router)
 
 @app.exception_handler(404)
 def not_found_handler(request: Request, _exc: HTTPException):
-    """Handle 404 errors by redirecting to external URL."""
+    """Return a bounded first-party 404 response."""
     logger.warning("404 Not Found: %s %s", request.method, request.url.path)
-    return RedirectResponse(url="https://ash-speed.hetzner.com/10GB.bin")
+    return JSONResponse(status_code=404, content={"detail": "Not found"})
 
 
 @app.exception_handler(Exception)
@@ -32,7 +36,7 @@ def global_exception_handler(request: Request, exc: Exception):
         "Unhandled exception: %s %s - %s",
         request.method,
         request.url.path,
-        str(exc),
+        type(exc).__name__,
         exc_info=True,
     )
-    raise HTTPException(status_code=500, detail="Internal server error") from exc
+    return JSONResponse(status_code=500, content={"detail": "Internal server error"})

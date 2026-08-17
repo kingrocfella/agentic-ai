@@ -16,6 +16,7 @@ os.environ["ACCESS_TOKEN_EXPIRE_MINUTES"] = "30"
 os.environ["WEATHER_API_KEY"] = "test-weather-api-key"
 os.environ["WEATHER_API_BASE_URL"] = "https://api.weatherapi.com/v1"
 os.environ["OLLAMA_HOST"] = "http://localhost:11434"
+os.environ["OLLAMA_MODEL"] = "llama3.2:3b"
 
 
 @pytest.fixture

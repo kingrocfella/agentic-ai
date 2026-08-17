@@ -1,60 +1,128 @@
-services:
-  app:
-    build: .
-    container_name: ai-agent-api
-    image: ai-agent-api
-    restart: unless-stopped
-    ports:
-      - "9000:9000"
-    env_file:
-      - .env
-    volumes:
-      - ./app:/app/app
-      - ./logs:/app/logs
-    working_dir: /app
-    command: uvicorn app.main:app --host 0.0.0.0 --port 9000 --reload
-    depends_on:
-      - redis
-      - ollama
+# The required, gitignored .env is injected into every container — it is the
+# only environment file in this repository. Published host ports bind to
+# 127.0.0.1 so Redis and the API are reachable from this machine only, never the
+# LAN. This is the single canonical compose file (no prod/override variants).
+x-app-env: &app-env
+  - path: ./.env
+    required: true
 
+x-app-image: &app-image
+  build: .
+  image: ai-agent-api
+  restart: unless-stopped
+  env_file: *app-env
+
+services:
   redis:
-    image: redis:7-alpine
+    # Digest-pinned so a rebuild months from now is the same bytes.
+    image: redis:7-alpine@sha256:e7723ff73d963f5cc6d9c4643ea3d989527a402a319239054e9472a7fb9219a2
     container_name: ai-agent-redis
     restart: unless-stopped
+    security_opt: ['no-new-privileges:true']
+    pids_limit: 256
     ports:
-      - "6379:6379"
+      # Localhost only, and on a port no other app on the shared VPS publishes.
+      - '127.0.0.1:${REDIS_HOST_PORT:-6380}:6379'
     volumes:
       - redis_data:/data
     healthcheck:
-      test:
-        ["CMD-SHELL", "timeout 5 bash -c '</dev/tcp/127.0.0.1/6379' || exit 1"]
+      test: ['CMD', 'redis-cli', 'ping']
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 30s
-  ollama:
-    image: ollama/ollama
-    container_name: ai-agent-ollama
-    restart: always
+
+  app:
+    <<: *app-image
+    container_name: ai-agent-api
+    environment:
+      # Absolute path to the mounted volume. A relative LOG_DIR would write
+      # inside the container layer and vanish on the next rebuild.
+      LOG_DIR: /app/logs
+      # Containers reach the shared Ollama daemon by service DNS over the
+      # word-games-ollama network. Host-run development uses the .env value.
+      OLLAMA_HOST: ${OLLAMA_HOST:-http://ollama:11434}
+    read_only: true
+    cap_drop: ['ALL']
+    security_opt: ['no-new-privileges:true']
+    pids_limit: 256
+    tmpfs:
+      - /tmp:size=67108864,mode=1777
     ports:
-      - "11435:11435"
+      - '127.0.0.1:${API_HOST_PORT:-9000}:9000'
+    volumes:
+      # Named volume, so the rotated log files survive image and container
+      # rebuilds. Removed only by an explicit `down -v`.
+      - app_logs:/app/logs
+    working_dir: /app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 9000
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - default
+      - word-games-ollama
+      # The Next.js client (agentic-ai-client) runs in its own Compose project
+      # and reaches this service by DNS over this private network.
+      - agentic-ai
+
+  # Opt-in only: `docker compose --profile ollama up`.
+  #
+  # DO NOT enable this on the shared VPS. Lost Vowels already runs the single
+  # Ollama daemon there, capped at 18 GB on a 24 GB box; a second daemon with
+  # its own loaded weights would exhaust the host and take every app down. This
+  # app reaches the daemon that is already running over word-games-ollama.
+  #
+  # This service exists for a development machine that has no Ollama at all.
+  ollama:
+    profiles: ['ollama']
+    image: ollama/ollama@sha256:9d30908e41144b1f1da89b9d8e33c07e4aeb43ff41a8660241b1686e2cc330ad
+    restart: unless-stopped
+    env_file: *app-env
+    environment:
+      # One CPU generation at a time; parallel model copies are what actually
+      # exhaust a small host.
+      OLLAMA_NUM_PARALLEL: 1
+      OLLAMA_MAX_LOADED_MODELS: 1
+      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-10m}
+    security_opt: ['no-new-privileges:true']
+    pids_limit: 512
+    ports:
+      # 11435 belongs to Lost Vowels' shared daemon; this dev-only sidecar takes
+      # its own port so both can exist on one development machine.
+      - '127.0.0.1:${OLLAMA_HOST_PORT:-11436}:11434'
     volumes:
       - ollama_data:/root/.ollama
-    entrypoint: >
-      sh -c "
-        ollama serve & 
-        sleep 5 && 
-        ollama pull llama3.2:latest && 
-        wait
-      "
+      - ./scripts/ollama-entrypoint.sh:/usr/local/bin/ollama-entrypoint.sh:ro
+    entrypoint: ['/bin/sh', '/usr/local/bin/ollama-entrypoint.sh']
     healthcheck:
-      test:
-        ["CMD-SHELL", "timeout 5 bash -c '</dev/tcp/127.0.0.1/11435' || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
+      test: ['CMD-SHELL', 'ollama show "$${OLLAMA_MODEL}" >/dev/null 2>&1']
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 10m
+    deploy:
+      resources:
+        limits:
+          memory: 8g
+    networks:
+      - default
+      - word-games-ollama
 
 volumes:
   redis_data:
+  app_logs:
   ollama_data:
+
+networks:
+  # Created by `make ensure-ollama-network`. The single Lost Vowels Ollama
+  # daemon is attached to it; every app that needs a model joins it rather than
+  # running a daemon of its own.
+  word-games-ollama:
+    name: word-games-ollama
+    external: true
+  # Created by `make ensure-app-network`, and joined by the agentic-ai-client
+  # compose project so the browser-facing app can call this API without either
+  # side publishing anything to the LAN.
+  agentic-ai:
+    name: agentic-ai
+    external: true
